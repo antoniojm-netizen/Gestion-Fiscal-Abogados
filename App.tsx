@@ -1,12 +1,13 @@
 
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Receipt, Scale, MessageSquare, Menu, Users, UserCog } from 'lucide-react';
+import { LayoutDashboard, Receipt, Scale, MessageSquare, Menu, Users, UserCog, Lock } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
 import { InvoiceManager } from './components/InvoiceManager';
 import { TaxModels } from './components/TaxModels';
 import { ChatBot } from './components/ChatBot';
 import { ContactsManager } from './components/ContactsManager';
 import { ProfessionalProfile } from './components/ProfessionalProfile';
+import { FiscalYearCloser } from './components/FiscalYearCloser';
 import { Invoice, InvoiceType } from './types';
 
 // Mock Initial Data
@@ -53,7 +54,7 @@ const INITIAL_INVOICES: Invoice[] = [
 ];
 
 function App() {
-  const [view, setView] = useState<'dashboard' | 'invoices' | 'taxes' | 'contacts' | 'profile'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'invoices' | 'taxes' | 'contacts' | 'profile' | 'closing'>('dashboard');
   const [invoices, setInvoices] = useState<Invoice[]>(() => {
     const saved = localStorage.getItem('invoices');
     return saved ? JSON.parse(saved) : INITIAL_INVOICES;
@@ -105,6 +106,12 @@ function App() {
           >
             <Users className="h-5 w-5" /> Agenda (Clientes/Prov.)
           </button>
+          <button 
+            onClick={() => setView('closing')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${view === 'closing' ? 'bg-indigo-600 text-white' : 'hover:bg-slate-800'}`}
+          >
+            <Lock className="h-5 w-5" /> Cierre Fiscal
+          </button>
           <div className="pt-4 mt-4 border-t border-slate-800">
              <button 
               onClick={() => setView('profile')}
@@ -138,6 +145,7 @@ function App() {
           {view === 'invoices' && <InvoiceManager invoices={invoices} setInvoices={setInvoices} />}
           {view === 'taxes' && <TaxModels invoices={invoices} onAskAi={handleAskAi} />}
           {view === 'contacts' && <ContactsManager />}
+          {view === 'closing' && <FiscalYearCloser invoices={invoices} />}
           {view === 'profile' && <ProfessionalProfile />}
         </div>
       </main>

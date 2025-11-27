@@ -1,7 +1,15 @@
 
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { Invoice, ProfessionalProfile } from "../types";
+import { Invoice, ProfessionalProfile, InvoiceType } from "../types";
+
+// Helper for European Currency Format
+const formatCurrency = (amount: number) => {
+  return new Intl.NumberFormat('es-ES', {
+    style: 'currency',
+    currency: 'EUR',
+  }).format(amount);
+};
 
 export const generateInvoicePDF = (invoice: Partial<Invoice>, profile: ProfessionalProfile) => {
   const doc = new jsPDF();
@@ -123,7 +131,8 @@ export const generateInvoicePDF = (invoice: Partial<Invoice>, profile: Professio
   doc.text("FECHA:", metaStartX + 20, metaY, { align: "right" });
   doc.setFont("helvetica", "bold");
   doc.setTextColor(colorBlack);
-  doc.text(invoice.date ? new Date(invoice.date).toLocaleDateString('es-ES') : new Date().toLocaleDateString('es-ES'), pageWidth - margin, metaY, { align: "right" });
+  const dateStr = invoice.date ? new Date(invoice.date).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' }) : new Date().toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  doc.text(dateStr, pageWidth - margin, metaY, { align: "right" });
 
 
   // --- SEPARADOR GRÁFICO ---
@@ -172,14 +181,14 @@ export const generateInvoicePDF = (invoice: Partial<Invoice>, profile: Professio
   
   tableBody.push([
     invoice.concept || "Servicios Profesionales",
-    `${feesAmount.toFixed(2)} €`
+    formatCurrency(feesAmount)
   ]);
 
   // Fila 2: Gastos/Suplidos (si existen y son > 0)
   if (invoice.taxableExpenses && invoice.taxableExpenses > 0) {
       tableBody.push([
           "Gastos / Suplidos incluidos en base",
-          `${invoice.taxableExpenses.toFixed(2)} €`
+          formatCurrency(invoice.taxableExpenses)
       ]);
   }
 
@@ -224,7 +233,7 @@ export const generateInvoicePDF = (invoice: Partial<Invoice>, profile: Professio
   doc.setTextColor(colorDarkGray);
   doc.text("Base Imponible", rightColX, finalY, { align: 'right' });
   doc.setTextColor(colorBlack);
-  doc.text(`${(invoice.baseAmount || 0).toFixed(2)} €`, rightValX, finalY, { align: 'right' });
+  doc.text(formatCurrency(invoice.baseAmount || 0), rightValX, finalY, { align: 'right' });
   
   finalY += 6;
 
@@ -232,7 +241,7 @@ export const generateInvoicePDF = (invoice: Partial<Invoice>, profile: Professio
   doc.setTextColor(colorDarkGray);
   doc.text(`IVA ${invoice.ivaRate}%`, rightColX, finalY, { align: 'right' });
   doc.setTextColor(colorBlack);
-  doc.text(`${(invoice.ivaAmount || 0).toFixed(2)} €`, rightValX, finalY, { align: 'right' });
+  doc.text(formatCurrency(invoice.ivaAmount || 0), rightValX, finalY, { align: 'right' });
   
   finalY += 6;
 
@@ -241,7 +250,7 @@ export const generateInvoicePDF = (invoice: Partial<Invoice>, profile: Professio
     doc.setTextColor(colorDarkGray);
     doc.text(`Retención IRPF ${invoice.irpfRate}%`, rightColX, finalY, { align: 'right' });
     doc.setTextColor(colorBlack);
-    doc.text(`- ${(invoice.irpfAmount || 0).toFixed(2)} €`, rightValX, finalY, { align: 'right' });
+    doc.text(`- ${formatCurrency(invoice.irpfAmount || 0)}`, rightValX, finalY, { align: 'right' });
     finalY += 6;
   }
 
@@ -250,7 +259,7 @@ export const generateInvoicePDF = (invoice: Partial<Invoice>, profile: Professio
       doc.setTextColor(colorDarkGray);
       doc.text("Suplidos (Exento)", rightColX, finalY, { align: 'right' });
       doc.setTextColor(colorBlack);
-      doc.text(`+ ${(invoice.supplies).toFixed(2)} €`, rightValX, finalY, { align: 'right' });
+      doc.text(`+ ${formatCurrency(invoice.supplies)}`, rightValX, finalY, { align: 'right' });
       finalY += 6;
   }
 
@@ -269,7 +278,7 @@ export const generateInvoicePDF = (invoice: Partial<Invoice>, profile: Professio
   doc.setFontSize(12);
   doc.setTextColor(colorBlack);
   doc.text("TOTAL FACTURA", rightColX, finalY, { align: 'right' });
-  doc.text(`${totalInvoice.toFixed(2)} €`, rightValX, finalY, { align: 'right' });
+  doc.text(formatCurrency(totalInvoice), rightValX, finalY, { align: 'right' });
 
   // --- PROVISIÓN DE FONDOS Y TOTAL A PAGAR ---
   // Si hay provisión de fondos, mostramos el desglose final
@@ -281,7 +290,7 @@ export const generateInvoicePDF = (invoice: Partial<Invoice>, profile: Professio
       doc.setTextColor(colorDarkGray);
       doc.text("Menos Provisión de Fondos", rightColX, finalY, { align: 'right' });
       doc.setTextColor(colorBlack); // Destacamos en negro al ser una resta importante
-      doc.text(`- ${invoice.retainer.toFixed(2)} €`, rightValX, finalY, { align: 'right' });
+      doc.text(`- ${formatCurrency(invoice.retainer)}`, rightValX, finalY, { align: 'right' });
       
       finalY += 5;
       
@@ -298,7 +307,7 @@ export const generateInvoicePDF = (invoice: Partial<Invoice>, profile: Professio
       doc.text("TOTAL A PAGAR", rightColX, finalY, { align: 'right' });
       
       const toPay = totalInvoice - invoice.retainer;
-      doc.text(`${toPay.toFixed(2)} €`, rightValX, finalY, { align: 'right' });
+      doc.text(formatCurrency(toPay), rightValX, finalY, { align: 'right' });
   }
 
   // --- PIE DE PÁGINA ---
@@ -335,4 +344,110 @@ export const generateInvoicePDF = (invoice: Partial<Invoice>, profile: Professio
 
   // Guardar archivo
   doc.save(`Factura_${invoice.number}.pdf`);
+};
+
+export const generateFiscalYearReport = (year: number, invoices: Invoice[], profile: ProfessionalProfile) => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 20;
+
+    // --- Title Page / Header ---
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(20);
+    doc.text(`INFORME CIERRE FISCAL ${year}`, margin, 30);
+    
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Generado el: ${new Date().toLocaleDateString('es-ES')}`, margin, 40);
+    
+    // Professional Details
+    doc.setFontSize(10);
+    doc.text(`${profile.name}`, margin, 50);
+    doc.text(`NIF: ${profile.nif}`, margin, 55);
+    if(profile.barAssociation) doc.text(`${profile.barAssociation} - Col. ${profile.collegiateNumber}`, margin, 60);
+
+    // Calculations
+    const yearInvoices = invoices.filter(inv => new Date(inv.date).getFullYear() === year);
+    const incomes = yearInvoices.filter(i => i.type === InvoiceType.INCOME);
+    const expenses = yearInvoices.filter(i => i.type === InvoiceType.EXPENSE && i.deductible);
+
+    const totalIncome = incomes.reduce((sum, i) => sum + i.baseAmount, 0);
+    const totalExpense = expenses.reduce((sum, i) => sum + i.baseAmount, 0);
+    const netResult = totalIncome - totalExpense;
+
+    const ivaRepercutido = incomes.reduce((sum, i) => sum + i.ivaAmount, 0);
+    const ivaSoportado = expenses.reduce((sum, i) => sum + i.ivaAmount, 0);
+    const ivaResult = ivaRepercutido - ivaSoportado;
+
+    const irpfSoportado = incomes.reduce((sum, i) => sum + i.irpfAmount, 0); // Retenciones sufridas
+    const irpfPracticado = expenses.reduce((sum, i) => sum + i.irpfAmount, 0); // Retenciones practicadas
+
+    // --- Executive Summary ---
+    let yPos = 75;
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.text("1. Resumen Ejecutivo (Estimación Directa)", margin, yPos);
+    yPos += 10;
+
+    autoTable(doc, {
+        startY: yPos,
+        head: [['Concepto', 'Importe']],
+        body: [
+            ['Total Ingresos (Base Imponible)', formatCurrency(totalIncome)],
+            ['Total Gastos Deducibles (Base)', formatCurrency(totalExpense)],
+            ['RENDIMIENTO NETO', formatCurrency(netResult)]
+        ],
+        theme: 'striped',
+        headStyles: { fillColor: [63, 81, 181] },
+        columnStyles: { 1: { halign: 'right', fontStyle: 'bold' } }
+    });
+
+    // @ts-ignore
+    yPos = doc.lastAutoTable.finalY + 15;
+
+    // --- VAT Summary ---
+    doc.text("2. Resumen de IVA (Modelo 303/390)", margin, yPos);
+    yPos += 10;
+
+    autoTable(doc, {
+        startY: yPos,
+        head: [['Concepto', 'Importe']],
+        body: [
+            ['IVA Repercutido (Devengado)', formatCurrency(ivaRepercutido)],
+            ['IVA Soportado (Deducible)', formatCurrency(ivaSoportado)],
+            ['RESULTADO LIQUIDACIÓN IVA', formatCurrency(ivaResult)]
+        ],
+        theme: 'striped',
+        headStyles: { fillColor: [234, 88, 12] }, // Orange
+        columnStyles: { 1: { halign: 'right', fontStyle: 'bold' } }
+    });
+
+    // @ts-ignore
+    yPos = doc.lastAutoTable.finalY + 15;
+
+    // --- Withholding Summary ---
+    doc.text("3. Retenciones IRPF", margin, yPos);
+    yPos += 10;
+
+    autoTable(doc, {
+        startY: yPos,
+        head: [['Concepto', 'Modelo Asociado', 'Importe']],
+        body: [
+            ['Retenciones Soportadas (Pagos a cuenta)', 'Mod. 130 / 100', formatCurrency(irpfSoportado)],
+            ['Retenciones Practicadas (A ingresar)', 'Mod. 111 / 190', formatCurrency(irpfPracticado)],
+        ],
+        theme: 'striped',
+        headStyles: { fillColor: [16, 185, 129] }, // Green
+        columnStyles: { 2: { halign: 'right', fontStyle: 'bold' } }
+    });
+    
+    // Footer explanation regarding numbering
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "italic");
+    doc.setTextColor(100);
+    doc.text(`Nota: El cierre fiscal no impide consultar datos históricos.`, margin, pageHeight - 20);
+    doc.text(`La numeración de facturas para el ejercicio ${year + 1} comenzará automáticamente con la secuencia A-${(year + 1).toString().slice(-2)}-1.`, margin, pageHeight - 15);
+
+    doc.save(`Cierre_Fiscal_${year}.pdf`);
 };

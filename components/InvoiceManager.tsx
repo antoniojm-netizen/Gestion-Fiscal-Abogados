@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Invoice, InvoiceType, SavedEntity, ProfessionalProfile } from '../types';
-import { Plus, Trash2, Search, Wand2, AlertTriangle, Filter, Download, FileSpreadsheet, Upload, Save, Bookmark, X, ChevronDown, Edit, RefreshCw, Utensils, Plane, HelpCircle, UserPlus, Check, FileInput, FileText, CheckSquare, Square, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, RotateCcw } from 'lucide-react';
+import { Plus, Trash2, Search, Wand2, AlertTriangle, Filter, Download, FileSpreadsheet, Upload, Save, Bookmark, X, ChevronDown, Edit, RefreshCw, Utensils, Plane, HelpCircle, UserPlus, Check, FileInput, FileText, CheckSquare, Square, ArrowUpDown, ArrowUp, ArrowDown, RotateCcw, ExternalLink, Calendar } from 'lucide-react';
 import { Button } from './Button';
 import { analyzeExpenseDeductibility, auditInvoices, extractInvoiceData } from '../services/geminiService';
 import { parseFile } from '../services/importService';
@@ -160,6 +159,7 @@ export const InvoiceManager: React.FC<InvoiceManagerProps> = ({ invoices, setInv
   // File Upload State (AI)
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [isDragging, setIsDragging] = useState(false); // New state for drag visual feedback
 
   // Bulk Import State (Excel/CSV)
   const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
@@ -179,6 +179,21 @@ export const InvoiceManager: React.FC<InvoiceManagerProps> = ({ invoices, setInv
 
   // Sorting State
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'date', direction: 'desc' });
+
+  // Filter State
+  const [filterType, setFilterType] = useState<'ALL' | 'INCOME' | 'EXPENSE'>('ALL');
+  const [filterCategory, setFilterCategory] = useState<string>('');
+  const [filterEntity, setFilterEntity] = useState<string>('');
+  const [filterNif, setFilterNif] = useState<string>('');
+  const [filterYear, setFilterYear] = useState<number>(new Date().getFullYear()); // Year Filter
+
+  // Calculate available years
+  const availableYears = useMemo(() => {
+      const years = new Set(invoices.map(inv => new Date(inv.date).getFullYear()));
+      years.add(new Date().getFullYear()); // Ensure current year is always there
+      return Array.from(years).sort((a: number, b: number) => b - a);
+  }, [invoices]);
+
 
   // Helper to calculate next number based on pattern Prefix-YY-Sequence
   const calculateNextNumber = (type: InvoiceType): string => {
@@ -394,12 +409,6 @@ export const InvoiceManager: React.FC<InvoiceManagerProps> = ({ invoices, setInv
         .map(inv => inv.number);
   }, [invoices, activeTab]);
 
-  // Filter State
-  const [filterType, setFilterType] = useState<'ALL' | 'INCOME' | 'EXPENSE'>('ALL');
-  const [filterCategory, setFilterCategory] = useState<string>('');
-  const [filterEntity, setFilterEntity] = useState<string>('');
-  const [filterNif, setFilterNif] = useState<string>('');
-
   // Saved Filters State
   const [savedFilters, setSavedFilters] = useState<SavedFilter[]>(() => {
       try {
@@ -483,6 +492,10 @@ export const InvoiceManager: React.FC<InvoiceManagerProps> = ({ invoices, setInv
         if (filterCategory && inv.category !== filterCategory) return false;
         if (filterEntity && !inv.entityName.toLowerCase().includes(filterEntity.toLowerCase())) return false;
         if (filterNif && !inv.nif.toLowerCase().includes(filterNif.toLowerCase())) return false;
+        // Year Filter
+        const invYear = new Date(inv.date).getFullYear();
+        if (filterYear && invYear !== filterYear) return false;
+        
         return true;
       });
 
@@ -515,7 +528,7 @@ export const InvoiceManager: React.FC<InvoiceManagerProps> = ({ invoices, setInv
       });
 
       return result;
-  }, [invoices, filterType, filterCategory, filterEntity, filterNif, sortConfig]);
+  }, [invoices, filterType, filterCategory, filterEntity, filterNif, filterYear, sortConfig]);
 
   // Selection Logic
   const toggleSelection = (id: string) => {
@@ -561,31 +574,31 @@ export const InvoiceManager: React.FC<InvoiceManagerProps> = ({ invoices, setInv
     // Number Logic: Check if we need to load an existing invoice
     if (name === 'number') {
         const targetType = activeTab === 'income' ? InvoiceType.INCOME : InvoiceType.EXPENSE;
-        const existingInvoice = invoices.find(inv => inv.number === value && inv.type === targetType);
         
-        if (existingInvoice) {
-            // Load existing invoice data into form
-            newFormData = { ...existingInvoice };
-            setEditingId(existingInvoice.id);
+        // If we are not currently editing an ID, try to find and load an invoice with this number
+        if (!editingId) {
+            const existingInvoice = invoices.find(inv => inv.number === value && inv.type === targetType);
             
-            // Re-validate NIF with relaxed rules for Expenses
-            const error = validateSpanishID(existingInvoice.nif);
-            if (error) {
-                if (targetType === InvoiceType.EXPENSE) {
-                    setNifError(null);
-                    setNifWarning("Aviso: Formato no estándar (Guardado previamente)");
+            if (existingInvoice) {
+                // Load existing invoice data into form
+                newFormData = { ...existingInvoice };
+                setEditingId(existingInvoice.id);
+                
+                // Re-validate NIF with relaxed rules for Expenses
+                const error = validateSpanishID(existingInvoice.nif);
+                if (error) {
+                    if (targetType === InvoiceType.EXPENSE) {
+                        setNifError(null);
+                        setNifWarning("Aviso: Formato no estándar (Guardado previamente)");
+                    } else {
+                        setNifError(error);
+                        setNifWarning(null);
+                    }
                 } else {
-                    setNifError(error);
+                    setNifError(null);
                     setNifWarning(null);
                 }
-            } else {
-                setNifError(null);
-                setNifWarning(null);
             }
-
-        } else {
-            // If we were editing, but changed number to non-existing, switch to create mode (allows cloning)
-            setEditingId(null);
         }
     }
 
@@ -721,6 +734,7 @@ export const InvoiceManager: React.FC<InvoiceManagerProps> = ({ invoices, setInv
       alert("Error al procesar el documento. Inténtalo de nuevo.");
     } finally {
       setIsImporting(false);
+      setIsDragging(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
@@ -732,8 +746,6 @@ export const InvoiceManager: React.FC<InvoiceManagerProps> = ({ invoices, setInv
       processUploadedFile(file);
     }
   };
-
-  const [isDragging, setIsDragging] = useState(false);
 
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -868,6 +880,19 @@ export const InvoiceManager: React.FC<InvoiceManagerProps> = ({ invoices, setInv
       ivaExpenseType: activeTab === 'expense' ? formData.ivaExpenseType : undefined,
     };
 
+    // Check for duplicates globally (for current type)
+    // Exclude the current invoice if we are in edit mode
+    const duplicate = invoices.find(i => 
+        i.number === invoiceData.number && 
+        i.type === invoiceData.type && 
+        i.id !== invoiceData.id
+    );
+
+    if (duplicate) {
+        alert(`Ya existe una factura de tipo ${invoiceData.type === InvoiceType.INCOME ? 'Ingreso' : 'Gasto'} con el número ${invoiceData.number}. Por favor, usa un número único.`);
+        return;
+    }
+
     // Auto-save new category if it exists and isn't already saved
     if (formData.category && !savedCategories.includes(formData.category)) {
         setSavedCategories(prev => [...prev, formData.category!].sort());
@@ -886,11 +911,6 @@ export const InvoiceManager: React.FC<InvoiceManagerProps> = ({ invoices, setInv
         }
     } else {
         // Create new invoice
-        const duplicate = invoices.find(i => i.number === invoiceData.number && i.type === invoiceData.type);
-        if (duplicate) {
-            alert(`Ya existe una factura con el número ${invoiceData.number}. Por favor, usa un número único.`);
-            return;
-        }
         setInvoices(prev => [...prev, invoiceData]);
         alert("Factura guardada correctamente.");
         cancelEdit(); // Reset form
@@ -1560,6 +1580,21 @@ Total Factura: ${formatNumber(totalAmount)}
           <div className="p-4 border-b border-slate-200 bg-slate-50 flex flex-wrap gap-4 items-center justify-between">
             <div className="flex items-center gap-2 flex-wrap">
                 <Filter className="h-4 w-4 text-slate-500" />
+                
+                <div className="relative min-w-[80px]">
+                    <Calendar className="absolute left-2 top-2 h-3.5 w-3.5 text-slate-400" />
+                    <select 
+                        value={filterYear}
+                        onChange={(e) => setFilterYear(Number(e.target.value))}
+                        className="text-sm border-slate-300 rounded-lg focus:ring-indigo-500 pl-7 pr-2 py-1 w-full"
+                        title="Filtrar por Año"
+                    >
+                        {availableYears.map(year => (
+                            <option key={year} value={year}>{year}</option>
+                        ))}
+                    </select>
+                </div>
+
                 <select 
                     value={filterType}
                     onChange={(e) => setFilterType(e.target.value as any)}
@@ -1594,13 +1629,14 @@ Total Factura: ${formatNumber(totalAmount)}
                     className="text-sm border-slate-300 rounded-lg focus:ring-indigo-500 px-2 py-1 min-w-[120px]"
                 />
                 
-                {(filterCategory || filterEntity || filterNif || filterType !== 'ALL') && (
+                {(filterCategory || filterEntity || filterNif || filterType !== 'ALL' || filterYear !== new Date().getFullYear()) && (
                     <button 
                         onClick={() => {
                             setFilterType('ALL');
                             setFilterCategory('');
                             setFilterEntity('');
                             setFilterNif('');
+                            setFilterYear(new Date().getFullYear());
                         }}
                         className="flex items-center text-xs text-slate-500 hover:text-indigo-600 underline ml-1"
                         title="Limpiar filtros"
